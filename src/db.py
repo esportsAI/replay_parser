@@ -1,7 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy import Column, ForeignKey, Boolean, Integer, Float, String, Date, Time
 from sqlalchemy.ext.declarative import declarative_base
-from parser import ReplayParser
 
 Base = declarative_base()
 
@@ -21,7 +20,6 @@ class Match(Base):
     season = Column(Integer)
     match_in_season = Column(Integer)
     date = Column(Date)
-    time = Column(Time)
 
 
 class Round(Base):
@@ -32,6 +30,7 @@ class Round(Base):
     round_in_match = Column(Integer),
     map_name = Column(String),
     duration = Column(Integer)
+    time = Column(Time)
 
 
 class PlayerStats(Base):
@@ -53,5 +52,8 @@ class DB(object):
     def __init__(self, db_path, db_framework='sqlite'):
         self.engine = create_engine(f'{db_framework}:///{db_path}')
 
-    def update_db(self, replay_path):
-        replay = ReplayParser(replay_path=replay_path)
+    def add_replay(self, replay, match):
+        pass
+
+    def add_match(self, replays):
+        pass
