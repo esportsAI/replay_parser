@@ -15,15 +15,21 @@ def init_db(path, name, framework='sqlite'):
     players = Table('players', meta, Column('id', Integer, primary_key=True),
                     Column('name', String))
 
-    matches = Table('matches', meta, Column('id', Integer, primary_key=True),
-                    Column('league', String), Column('season', Integer),
-                    Column('match_in_season', Integer), Column('date', Date),
-                    Column('time', Time))
+    matches = Table(
+        'matches',
+        meta,
+        Column('id', Integer, primary_key=True),
+        Column('league', String),
+        Column('season', Integer),
+        Column('match_in_season', Integer),
+        Column('date', Date),
+    )
 
     rounds = Table('rounds', meta, Column('id', Integer, primary_key=True),
                    Column('match_id', Integer),
                    Column('round_in_match', Integer),
-                   Column('map_name', String), Column('duration', Integer))
+                   Column('map_name', String), Column('duration', Integer),
+                   Column('time', Time))
 
     player_stats = Table('player_stats', meta,
                          Column('id', Integer, primary_key=True),
