@@ -43,6 +43,7 @@ def init_db(path, name, framework='sqlite'):
                          Column('damage_soaked', Float))
 
     meta.create_all(engine)
+    con.close()
 
 
 if __name__ == "__main__":
