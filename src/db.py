@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine
 from sqlalchemy import Column, ForeignKey, Boolean, Integer, Float, String, Date, Time
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
@@ -14,7 +14,7 @@ class Player(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
 
-    stats = relationship("PlayerStats", backref="players")
+    stats = relationship("PlayerStats", back_populates="player")
 
 
 class Match(Base):
@@ -26,7 +26,7 @@ class Match(Base):
     match_in_season = Column(Integer)
     date = Column(Date)
 
-    rounds = relationship("Round", backref="matches")
+    rounds = relationship("Round", back_populates="match")
 
 
 class Round(Base):
@@ -39,7 +39,8 @@ class Round(Base):
     duration = Column(Integer)
     time = Column(Time)
 
-    stats = relationship("PlayerStats", backref="rounds")
+    match = relationship("Match", back_populates="rounds")
+    stats = relationship("PlayerStats", back_populates="round")
 
 
 class PlayerStats(Base):
@@ -56,93 +57,123 @@ class PlayerStats(Base):
     healing = Column(Float)
     damage_soaked = Column(Float)
 
+    player = relationship("Player", back_populates="stats")
+    round = relationship("Round", back_populates="stats")
+
 
 class DataBaseException(Exception):
     pass
 
 
 class DB(object):
-    def __init__(self, db_path, db_framework='sqlite'):
-        self.engine = create_engine(f'{db_framework}:///{db_path}')
+    def __init__(self, path, framework='sqlite'):
+        self.engine = create_engine(f'{framework}:///{path}')
 
         Session = sessionmaker(bind=self.engine)
         self.session = Session()
 
-    def __get_entry__(self, query, entry):
-        with self.engine.connect() as conn:
-            query_result = list(conn.execute(query))
+    def create_db(self):
+        Base.metadata.create_all(self.engine)
+
+    def __get_entry__(self, query, entry, entry_class):
+        query_result = self.session.query(entry_class).filter(*query).all()
 
         if len(query_result) == 0:
-            self.session.add(entry)
-            self.session.commit()
-
-            return entry
+            return entry, False
 
         elif len(query_result) == 1:
-            entry.id = query_result[0][0]
-
-            return entry
+            return query_result[0], True
 
         else:
             raise DataBaseException(
                 'Ambigious entry. Please contact the developer.')
 
     def __get_player__(self, name):
-        query = select(Player).where(Player.name == name)
+        query = (Player.name == name, )
         player = Player(name=name)
 
-        return self.__get_entry__(query=query, entry=player)
+        player, exists = self.__get_entry__(query=query,
+                                            entry=player,
+                                            entry_class=Player)
+
+        if not exists:
+            self.session.add(player)
+            self.session.commit()
+
+        return player
 
     def __get_match__(self, league, season, match_in_season, date):
-        query = select(Match).where(Match.league == league,
-                                    Match.season == season,
-                                    Match.match_in_season == match_in_season,
-                                    Match.date == date)
+        query = (Match.league == league, Match.season == season,
+                 Match.match_in_season == match_in_season, Match.date == date)
         match = Match(league=league,
                       season=season,
                       match_in_season=match_in_season,
                       date=date)
 
-        return self.__get_entry__(query=query, entry=match)
+        match, exists = self.__get_entry__(query=query,
+                                           entry=match,
+                                           entry_class=Match)
+
+        if not exists:
+            self.session.add(match)
+            self.session.commit()
+
+        return match
 
     def __get_round__(self, match, round_in_match, map_name, duration, time):
-        query = select(Round).where(Round.match_id == match.id,
-                                    Round.round_in_match == round_in_match,
-                                    Round.map_name == map_name,
-                                    Round.duration == duration,
-                                    Round.time == time)
+        query = (Round.match_id == match.id,
+                 Round.round_in_match == round_in_match,
+                 Round.map_name == map_name, Round.duration == duration,
+                 Round.time == time)
         round = Round(round_in_match=round_in_match,
                       map_name=map_name,
                       duration=duration,
                       time=time)
 
-        match.rounds.append(round)
+        round, exists = self.__get_entry__(query=query,
+                                           entry=round,
+                                           entry_class=Round)
 
-        return self.__get_entry__(query=query, entry=round)
+        if not exists:
+            match.rounds.append(round)
+
+            self.session.add(round)
+            self.session.commit()
+
+        return round
 
     def __get_player_stat__(self, round, player, winner_team, kills, deaths,
                             assists, exp_contrib, healing, damage_soaked):
 
-        query = select(PlayerStats).where(
-            PlayerStats.round_id == round.id,
-            PlayerStats.player_id == player.id,
-            PlayerStats.winner_team == winner_team, PlayerStats.kills == kills,
-            PlayerStats.deaths == deaths, PlayerStats.assists == assists,
-            PlayerStats.exp_contrib == exp_contrib,
-            PlayerStats.healing == healing,
-            PlayerStats.damage_soaked == damage_soaked)
+        query = (PlayerStats.round_id == round.id,
+                 PlayerStats.player_id == player.id,
+                 PlayerStats.winner_team == winner_team,
+                 PlayerStats.kills == kills, PlayerStats.deaths == deaths,
+                 PlayerStats.assists == assists,
+                 PlayerStats.exp_contrib == exp_contrib,
+                 PlayerStats.healing == healing,
+                 PlayerStats.damage_soaked == damage_soaked)
 
-        player_stat = PlayerStats(winner_team=winner_team,
-                                  kills=kills,
-                                  deaths=deaths,
-                                  assists=assists,
-                                  exp_contrib=exp_contrib,
-                                  healing=healing,
-                                  damage_soaked=damage_soaked)
-        player.stats.append(player_stat)
-        round.stats.append(player_stat)
+        player_stats = PlayerStats(winner_team=winner_team,
+                                   kills=kills,
+                                   deaths=deaths,
+                                   assists=assists,
+                                   exp_contrib=exp_contrib,
+                                   healing=healing,
+                                   damage_soaked=damage_soaked)
 
-        return self.__get_entry__(query=query, entry=player_stat)
+        player_stats, exists = self.__get_entry__(query=query,
+                                                  entry=player_stats,
+                                                  entry_class=PlayerStats)
+
+        if not exists:
+            player.stats.append(player_stats)
+            round.stats.append(player_stats)
+
+            self.session.add(player_stats)
+            self.session.commit()
+
+        return player_stats
 
     def add_replay(self, replay):
         print(replay.utc_time)
