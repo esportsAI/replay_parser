@@ -122,6 +122,7 @@ class DB(object):
 
     def __get_player_stat__(self, round, player, winner_team, kills, deaths,
                             assists, exp_contrib, healing, damage_soaked):
+
         query = select(PlayerStats).where(
             PlayerStats.round_id == round.id,
             PlayerStats.player_id == player.id,
@@ -173,4 +174,4 @@ class DB(object):
                                      assists=series['assists'],
                                      exp_contrib=series['exp_contrib'],
                                      healing=series['healing'],
-                                     damage_soaked='damage_soaked')
+                                     damage_soaked=series['damage_soaked'])
