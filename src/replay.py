@@ -53,12 +53,12 @@ class Replay(object):
                  replay_path,
                  league=None,
                  season=None,
-                 match=None,
-                 round=None):
+                 match_id=None,
+                 round_id=None):
         self.league = league
         self.season = season
-        self.match = match
-        self.round = round
+        self.match_id = match_id
+        self.round_id = round_id
 
         replay = ReplayParser(replay_path=replay_path)
 
@@ -69,8 +69,11 @@ class Replay(object):
 
         # Get Replay Information
         self.map_name = self._details['m_title'].decode('utf-8')
-        self.utc_time = self._details['m_timeUTC']
+        self.utc_time = self.__get_utc_time__()
         self.duration = self.__get_duration__()
+
+    def __get_utc_time__(self):
+        return int(self._details['m_timeUTC'] / 10**7 - 1164447360)
 
     def __get_duration__(self):
         df = pd.DataFrame(self._tracker_events)
@@ -129,7 +132,7 @@ class Replay(object):
 
         colum_names = [
             'player_name', 'hero', 'team_id', 'winner_team', 'kills', 'deaths',
-            'assists', 'experience_contribution', 'healing', 'damage_soaked'
+            'assists', 'exp_contrib', 'healing', 'damage_soaked'
         ]
 
         metrics_df = metrics_df[conserve_columns]
