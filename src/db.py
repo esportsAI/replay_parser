@@ -9,16 +9,17 @@ Base = declarative_base()
 
 
 class Player(Base):
-    __tablename__ = 'players'
+    __tablename__ = 'Player'
 
     id = Column(Integer, primary_key=True)
     name = Column(String)
 
+    # first parameter points to class not to table name
     stats = relationship("PlayerStats", back_populates="player")
 
 
 class Match(Base):
-    __tablename__ = 'matches'
+    __tablename__ = 'Match'
 
     id = Column(Integer, primary_key=True)
     league = Column(String)
@@ -30,10 +31,10 @@ class Match(Base):
 
 
 class Round(Base):
-    __tablename__ = 'rounds'
+    __tablename__ = 'Round'
 
     id = Column(Integer, primary_key=True)
-    match_id = Column(Integer, ForeignKey('matches.id'))
+    match_id = Column(Integer, ForeignKey('Match.id'))
     round_in_match = Column(Integer)
     map_name = Column(String)
     duration = Column(Integer)
@@ -44,11 +45,11 @@ class Round(Base):
 
 
 class PlayerStats(Base):
-    __tablename__ = 'player_stats'
+    __tablename__ = 'PlayerStatistics'
 
     id = Column(Integer, primary_key=True)
-    round_id = Column(Integer, ForeignKey('rounds.id'))
-    player_id = Column(Integer, ForeignKey('players.id'))
+    round_id = Column(Integer, ForeignKey('Round.id'))
+    player_id = Column(Integer, ForeignKey('Player.id'))
     winner_team = Column(Boolean)
     kills = Column(Float)
     deaths = Column(Float)
@@ -104,7 +105,7 @@ class DB(object):
 
     def __get_match__(self, league, season, match_in_season, date):
         query = (Match.league == league, Match.season == season,
-                 Match.match_in_season == match_in_season, Match.date == date)
+                 Match.match_in_season == match_in_season)
         match = Match(league=league,
                       season=season,
                       match_in_season=match_in_season,
@@ -176,7 +177,6 @@ class DB(object):
         return player_stats
 
     def add_replay(self, replay):
-        print(replay.utc_time)
         dt = datetime.fromtimestamp(replay.utc_time, tz.tzutc())
 
         match = self.__get_match__(league=replay.league,
