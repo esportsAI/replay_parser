@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine
 from src.db import Player as PlayerDB
 from src.db import Match as MatchDB
 from src.db import Round as RoundDB
@@ -16,14 +15,15 @@ class Player(object):
             PlayerStatsDB.player).join(PlayerStatsDB.round).join(RoundDB.match)
         query = query.filter(PlayerDB.name == self.name)
         query = query.add_columns(MatchDB.season, MatchDB.match_in_season,
-                                  RoundDB.round_in_match, RoundDB.duration)
+                                  RoundDB.round_in_match, RoundDB.duration,
+                                  MatchDB.date)
 
         # create df
         self.df = pd.read_sql(query.statement, query.session.bind)
         self.df = self.df[[
-            'season', 'match_in_season', 'round_in_match', 'duration', 'kills',
-            'deaths', 'assists', 'exp_contrib', 'healing', 'damage_soaked',
-            'winner_team'
+            'season', 'match_in_season', 'date', 'round_in_match', 'duration',
+            'kills', 'deaths', 'assists', 'exp_contrib', 'healing',
+            'damage_soaked', 'winner_team'
         ]]
         self.df.rename(columns={
             'season': 'season',
@@ -83,10 +83,14 @@ class Player(object):
     def get_season_scores(self, season_id):
         data = self.df.query(f'season == {season_id}')
 
-        scores = [
-            self.get_match_score(season_id=season_id, match_id=match_id)
-            for match_id in data['match'].unique()
-        ]
+        scores = {}
+
+        for match_id in data['match'].unique():
+            match_date = data.query(f'match == {match_id}')['date'].iloc[0]
+            calendar_week = match_date.isocalendar().week
+
+            scores[calendar_week] = self.get_match_score(season_id=season_id,
+                                                         match_id=match_id)
 
         return scores
 
@@ -110,10 +114,25 @@ class ScoreBoard(object):
         self.weeks = df['date']
 
     def get_scoreboard(self):
-        scores_dict = {}
+        score_board = []
 
         for player in self.players:
-            scores_dict[player.name] = np.round(
-                player.get_season_scores(season_id=self.season_id), 2)
+            player_dict = {'name': player.name}
+            player_dict.update(
+                player.get_season_scores(season_id=self.season_id))
 
-        return scores_dict
+            score_board.append(player_dict)
+
+        score_board = pd.DataFrame(score_board)
+        score_board['Season Score'] = score_board.mean(axis=1)
+
+        # rename columns
+        week_offset = score_board.columns[1] - 1
+        cols = {'name': 'Player Name'}
+
+        for week in score_board.columns[1:-1]:
+            cols[week] = f'Week {week - week_offset}'
+
+        score_board.rename(columns=cols, inplace=True)
+
+        return score_board.round(2)
