@@ -73,7 +73,7 @@ class Replay(object):
         self.duration = self.__get_duration__()
 
     def __get_utc_time__(self):
-        return int(self._details['m_timeUTC'] / 10**7 - 1164447360)
+        return int(self._details['m_timeUTC'] / 10**7 - 11644473600)
 
     def __get_duration__(self):
         df = pd.DataFrame(self._tracker_events)
