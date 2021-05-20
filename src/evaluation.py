@@ -124,7 +124,7 @@ class ScoreBoard(object):
             score_board.append(player_dict)
 
         score_board = pd.DataFrame(score_board)
-        score_board['Season Score'] = score_board.mean(axis=1)
+        score_board['Avg. Score'] = score_board.mean(axis=1)
 
         # rename columns
         week_offset = score_board.columns[1] - 1
