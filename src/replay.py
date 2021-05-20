@@ -62,6 +62,7 @@ class Replay(object):
 
         replay = ReplayParser(replay_path=replay_path)
 
+        self._header = replay.header
         self._details = replay.get_details()
 
         events = replay.get_events(event_types=['tracker'])
@@ -70,6 +71,7 @@ class Replay(object):
         # Get Replay Information
         self.map_name = self._details['m_title'].decode('utf-8')
         self.utc_time = self.__get_utc_time__()
+        self.elapsed_game_loops = replay.header['m_elapsedGameLoops']
         self.duration = self.__get_duration__()
 
     def __get_utc_time__(self):
@@ -78,15 +80,31 @@ class Replay(object):
     def __get_duration__(self):
         df = pd.DataFrame(self._tracker_events)
 
+        # get gameloop where match match starts
         start_gameloop = df.query(
             'm_eventName == b"GatesOpen"').iloc[0]['_gameloop']
-        final_gameloop = df.query(
-            '_event == "NNet.Replay.Tracker.SUnitDiedEvent"'
-        ).iloc[-1]['_gameloop']
 
-        game_loop_duration = final_gameloop - start_gameloop
+        # get gameloop where core dies
+        cores_df = df.query(
+            'm_unitTypeName == b"KingsCore" | m_unitTypeName == b"VanndarStormpike" | m_unitTypeName == b"DrekThar"'
+        )
+        units_died_df = df.query(
+            '_event == "NNet.Replay.Tracker.SUnitDiedEvent"')
 
-        return int((game_loop_duration % 2**32) / 16)
+        died_core_df = cores_df.merge(units_died_df, on='m_unitTagIndex')
+
+        if len(died_core_df) == 0:
+            final_gameloop = units_died_df.iloc[-1]['_gameloop']
+        elif len(died_core_df) == 1:
+            final_gameloop = died_core_df.iloc[0]['_gameloop_y']
+        else:
+            raise Exception(
+                "Multiple cores died. It's either due to a bug in your replay file or the software."
+            )
+
+        match_length = final_gameloop - start_gameloop
+
+        return int(match_length / 16)
 
     def get_duration_secs(self):
         return self.duration
