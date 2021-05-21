@@ -16,6 +16,7 @@ class Player(Base):
 
     # first parameter points to class not to table name
     stats = relationship("PlayerStats", back_populates="player")
+    scores = relationship("PlayerScores", back_populates="player")
 
 
 class Match(Base):
@@ -60,6 +61,27 @@ class PlayerStats(Base):
 
     player = relationship("Player", back_populates="stats")
     round = relationship("Round", back_populates="stats")
+
+
+class PlayerScores(Base):
+    __tablename__ = 'PlayerScores'
+
+    id = Column(Integer, primary_key=True)
+    player_id = Column(Integer, ForeignKey('Player.id'))
+    season = Column(Integer)
+    week = Column(Integer)
+    kills = Column(Float)
+    deaths = Column(Float)
+    assists = Column(Float)
+    exp_per_min = Column(Float)
+    healing = Column(Float)
+    damage_soaked = Column(Float)
+    winner = Column(Float)
+    under_10_mins = Column(Float)
+    under_15_mins = Column(Float)
+    total = Column(Float)
+
+    player = relationship("Player", back_populates="scores")
 
 
 class DataBaseException(Exception):
@@ -176,6 +198,38 @@ class DB(object):
 
         return player_stats
 
+    def __get_player_scores__(self, player, season, week, kills, deaths,
+                              assists, exp_per_min, healing, damage_soaked,
+                              winner, under_10_mins, under_15_mins, total):
+
+        query = (PlayerScores.player_id == player.id,
+                 PlayerScores.season == season, PlayerScores.week == week)
+
+        player_scores = PlayerScores(season=season,
+                                     week=week,
+                                     kills=kills,
+                                     deaths=deaths,
+                                     assists=assists,
+                                     exp_per_min=exp_per_min,
+                                     healing=healing,
+                                     damage_soaked=damage_soaked,
+                                     winner=winner,
+                                     under_10_mins=under_10_mins,
+                                     under_15_mins=under_15_mins,
+                                     total=total)
+
+        player_scores, exists = self.__get_entry__(query=query,
+                                                   entry=player_scores,
+                                                   entry_class=PlayerScores)
+
+        if not exists:
+            player.scores.append(player_scores)
+
+            self.session.add(player_scores)
+            self.session.commit()
+
+        return player_scores
+
     def add_replay(self, replay):
         dt = datetime.fromtimestamp(replay.utc_time, tz.tzutc())
 
@@ -206,3 +260,24 @@ class DB(object):
                                      exp_contrib=series['exp_contrib'],
                                      healing=series['healing'],
                                      damage_soaked=series['damage_soaked'])
+
+    def add_scores(self, score_evaluation):
+        scores = score_evaluation.get_scores()
+
+        for score_dict in scores:
+            player = self.__get_player__(name=score_dict['player_name'])
+
+            self.__get_player_scores__(
+                player=player,
+                season=score_evaluation.season_id,
+                week=score_dict['week'],
+                kills=score_dict['kills'],
+                deaths=score_dict['deaths'],
+                assists=score_dict['assists'],
+                exp_per_min=score_dict['exp_per_min'],
+                healing=score_dict['healing'],
+                damage_soaked=score_dict['damage_soaked'],
+                winner=score_dict['winner'],
+                under_10_mins=score_dict['under_10_mins'],
+                under_15_mins=score_dict['under_15_mins'],
+                total=score_dict['total'])
