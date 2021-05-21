@@ -71,7 +71,6 @@ class Replay(object):
         # Get Replay Information
         self.map_name = self._details['m_title'].decode('utf-8')
         self.utc_time = self.__get_utc_time__()
-        self.elapsed_game_loops = replay.header['m_elapsedGameLoops']
         self.duration = self.__get_duration__()
 
     def __get_utc_time__(self):
@@ -157,7 +156,9 @@ class Replay(object):
         metrics_df.columns = colum_names
 
         # Change data types
-        metrics_df['winner_team'] -= 1
+        # 2 = False, 1 = True -> abs(2 - 2) = False, abs(1 - 2) = True
+        metrics_df['winner_team'] -= 2
+        metrics_df['winner_team'] = metrics_df['winner_team'].abs()
 
         conversion_dict = dict(winner_team=bool)
         metrics_df = metrics_df.astype(conversion_dict)
