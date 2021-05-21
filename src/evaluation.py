@@ -25,29 +25,46 @@ class Player(object):
             'kills', 'deaths', 'assists', 'exp_contrib', 'healing',
             'damage_soaked', 'winner_team'
         ]]
-        self.df.rename(columns={
+
+        new_column_names = {
             'season': 'season',
             'match_in_season': 'match',
             'round_in_match': 'round'
-        },
-                       inplace=True)
+        }
+
+        self.df.rename(columns=new_column_names, inplace=True)
 
     @staticmethod
-    def __calculate_score__(kills, deaths, assists, xp_contrib, duration,
-                            healing, dmg_soaked, winner):
-        xp_per_min = xp_contrib / duration
-        under_10_mins = duration < 10
-        under_15_mins = 10 <= duration < 15
+    def __get_individual_scores__(data_series):
 
-        individual_scores = [
-            3 * kills, -1 * deaths, 1.5 * assists, 0.0075 * xp_per_min,
-            0.0001 * healing, 0.0001 * dmg_soaked, 2 * winner,
-            2 * under_15_mins, 5 * under_10_mins
-        ]
+        scores_dict = {
+            'kills':
+            3 * data_series.kills,
+            'deaths':
+            -1 * data_series.deaths,
+            'assists':
+            1.5 * data_series.assists,
+            'exp_per_min':
+            0.0075 * data_series.exp_contrib / data_series.duration,
+            'healing':
+            0.0001 * data_series.healing,
+            'damage_soaked':
+            0.0001 * data_series.damage_soaked,
+            'winner':
+            2 * data_series.winner_team,
+            'under_10_mins':
+            5 * data_series.winner_team * (data_series.duration < 10),
+            'under_15_mins':
+            2 * data_series.winner_team * (10 <= data_series.duration < 15),
+        }
 
-        return np.sum(individual_scores)
+        return scores_dict
 
-    def get_round_score(self, season_id, match_id, round_id):
+    @staticmethod
+    def __get_score__(scores_dict):
+        return np.sum(list(scores_dict.values()))
+
+    def get_round_scores(self, season_id, match_id, round_id):
         data = self.df.query(
             f'season == {season_id} & match == {match_id} & round == {round_id}'
         )
@@ -59,26 +76,25 @@ class Player(object):
         else:
             raise Exception('No matching data found!')
 
-        return self.__calculate_score__(kills=data.kills,
-                                        deaths=data.deaths,
-                                        assists=data.assists,
-                                        xp_contrib=data.exp_contrib,
-                                        duration=data.duration,
-                                        healing=data.healing,
-                                        dmg_soaked=data.damage_soaked,
-                                        winner=data.winner_team)
+        score_dict = self.__get_individual_scores__(data_series=data)
+        score_dict['total'] = self.__get_score__(scores_dict=score_dict)
 
-    def get_match_score(self, season_id, match_id):
+        return score_dict
+
+    def get_match_scores(self, season_id, match_id):
         data = self.df.query(f'season == {season_id} & match == {match_id}')
 
-        scores = [
-            self.get_round_score(season_id=season_id,
-                                 match_id=match_id,
-                                 round_id=round_id)
+        score_dicts = [
+            self.get_round_scores(season_id=season_id,
+                                  match_id=match_id,
+                                  round_id=round_id)
             for round_id in data['round']
         ]
 
-        return np.sort(scores)[-3:].mean()
+        df = pd.DataFrame(score_dicts).sort_values(['total'],
+                                                   ascending=False).iloc[:3]
+
+        return df.mean().to_dict()
 
     def get_season_scores(self, season_id):
         data = self.df.query(f'season == {season_id}')
@@ -89,13 +105,13 @@ class Player(object):
             match_date = data.query(f'match == {match_id}')['date'].iloc[0]
             calendar_week = match_date.isocalendar().week
 
-            scores[calendar_week] = self.get_match_score(season_id=season_id,
-                                                         match_id=match_id)
+            scores[calendar_week] = self.get_match_scores(season_id=season_id,
+                                                          match_id=match_id)
 
         return scores
 
 
-class ScoreBoard(object):
+class ScoreEvaluation(object):
     def __init__(self, season_id, db):
         self.season_id = season_id
 
@@ -113,13 +129,40 @@ class ScoreBoard(object):
 
         self.weeks = df['date']
 
-    def get_scoreboard(self):
-        score_board = []
+    def get_scores(self):
+        scores = []
 
         for player in self.players:
-            player_dict = {'name': player.name}
-            player_dict.update(
-                player.get_season_scores(season_id=self.season_id))
+            season_scores = player.get_season_scores(season_id=self.season_id)
+
+            for key, value in season_scores.items():
+                entry = {'player_name': player.name}
+                entry['week'] = key
+                entry.update(value)
+
+                scores.append(entry)
+
+        return scores
+
+    def get_summary(self):
+        score_board = []
+        scores_df = pd.DataFrame(self.get_scores())
+
+        players = scores_df['player_name'].unique()
+        weeks = scores_df['week'].unique()
+
+        for player_name in players:
+            player_dict = {'Player Name': player_name}
+            for week in weeks:
+                entry = scores_df.query(
+                    f'player_name == "{player_name}" & week == {week}')
+
+                if len(entry) == 0:
+                    continue
+                elif len(entry) == 1:
+                    player_dict[week] = entry.iloc[0]['total']
+                else:
+                    raise Exception('Ambigious entry found!')
 
             score_board.append(player_dict)
 
@@ -128,7 +171,7 @@ class ScoreBoard(object):
 
         # rename columns
         week_offset = score_board.columns[1] - 1
-        cols = {'name': 'Player Name'}
+        cols = {}
 
         for week in score_board.columns[1:-1]:
             cols[week] = f'Week {week - week_offset}'
