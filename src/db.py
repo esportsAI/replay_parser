@@ -13,6 +13,7 @@ class Player(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String)
+    blizzard_id = Column(Integer)
 
     # first parameter points to class not to table name
     stats = relationship("PlayerStats", back_populates="player")
@@ -111,9 +112,9 @@ class DB(object):
             raise DataBaseException(
                 'Ambigious entry. Please contact the developer.')
 
-    def __get_player__(self, name):
-        query = (Player.name == name, )
-        player = Player(name=name)
+    def __get_player__(self, name, blizzard_id):
+        query = (Player.blizzard_id == blizzard_id, )
+        player = Player(name=name, blizzard_id=blizzard_id)
 
         player, exists = self.__get_entry__(query=query,
                                             entry=player,
@@ -244,12 +245,17 @@ class DB(object):
                                    duration=replay.get_duration_mins(),
                                    time=dt.time())
 
-        df = replay.get_metrics()
+        metrics_df = replay.get_metrics()
+        player_info_df = replay.get_player_info()
+
+        df = player_info_df.merge(metrics_df, on='player_name')
 
         for i in range(len(df)):
             series = df.iloc[i]
 
-            player = self.__get_player__(name=series['player_name'])
+            player = self.__get_player__(name=series['player_name'],
+                                         blizzard_id=int(
+                                             series['blizzard_id']))
 
             self.__get_player_stat__(round=round,
                                      player=player,
@@ -265,7 +271,8 @@ class DB(object):
         scores = score_evaluation.get_scores()
 
         for score_dict in scores:
-            player = self.__get_player__(name=score_dict['player_name'])
+            player = self.__get_player__(name=score_dict['player_name'],
+                                         blizzard_id=score_dict['blizzard_id'])
 
             self.__get_player_scores__(
                 player=player,

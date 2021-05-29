@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from src.db import Player as PlayerDB
+from src.db import Player as PlayerDB
 from src.db import Match as MatchDB
 from src.db import Round as RoundDB
 from src.db import PlayerStats as PlayerStatsDB
@@ -33,6 +34,10 @@ class Player(object):
         }
 
         self.df.rename(columns=new_column_names, inplace=True)
+
+        # get Blizzard ID
+        self.blizzard_id = db.session.query(PlayerDB).filter(
+            PlayerDB.name == self.name).all()[0].blizzard_id
 
     @staticmethod
     def __get_individual_scores__(data_series):
@@ -136,7 +141,10 @@ class ScoreEvaluation(object):
             season_scores = player.get_season_scores(season_id=self.season_id)
 
             for key, value in season_scores.items():
-                entry = {'player_name': player.name}
+                entry = {
+                    'player_name': player.name,
+                    'blizzard_id': player.blizzard_id
+                }
                 entry['week'] = key
                 entry.update(value)
 

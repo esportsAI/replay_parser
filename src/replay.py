@@ -133,6 +133,20 @@ class Replay(object):
 
         return pd.DataFrame(metrics_dict)
 
+    def get_player_info(self):
+        player_list = []
+
+        for player in self._details['m_playerList']:
+            player_dict = {
+                'player_name': player['m_name'].decode('utf-8'),
+                'blizzard_id': player['m_toon']['m_id'],
+                'region': player['m_toon']['m_region']
+            }
+
+            player_list.append(player_dict)
+
+        return pd.DataFrame(player_list)
+
     def get_metrics(self):
         players_df = self.__get_player_list_df__()
         stats_df = self.__get_player_stats_df__(
