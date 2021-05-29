@@ -232,8 +232,11 @@ class DB(object):
         return player_scores
 
     def add_replay(self, replay):
+        # set time
         dt = datetime.fromtimestamp(replay.utc_time, tz.tzutc())
+        dt = dt.astimezone(tz.gettz('America/New_York'))
 
+        # add replay data to DB
         match = self.__get_match__(league=replay.league,
                                    season=replay.season,
                                    match_in_season=replay.match_id,
