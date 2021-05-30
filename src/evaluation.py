@@ -16,14 +16,15 @@ class Entity(object):
         self.query = self.query.add_columns(MatchDB.season,
                                             MatchDB.match_in_season,
                                             RoundDB.round_in_match,
-                                            RoundDB.duration, MatchDB.date)
+                                            RoundDB.duration, MatchDB.date,
+                                            MatchDB.league)
 
     @staticmethod
     def __prettify_stat_df__(df):
         df = df[[
-            'player_id', 'date', 'season', 'match_in_season', 'round_in_match',
-            'duration', 'kills', 'deaths', 'assists', 'exp_contrib', 'healing',
-            'damage_soaked', 'winner_team'
+            'player_id', 'date', 'league', 'season', 'match_in_season',
+            'round_in_match', 'duration', 'kills', 'deaths', 'assists',
+            'exp_contrib', 'healing', 'damage_soaked', 'winner_team'
         ]]
 
         new_column_names = {
@@ -119,16 +120,18 @@ class Player(Entity):
 
 
 class Round(Entity):
-    def __init__(self, season_id, match_id, round_id, db):
+    def __init__(self, league, season_id, match_id, round_id, db):
         super().__init__(db=db)
 
+        self.league = league
         self.season = season_id
         self.match = match_id
         self.round = round_id
 
     def get_stats(self):
         return super().get_stats(
-            filter_query=(MatchDB.season == self.season,
+            filter_query=(MatchDB.league == self.league,
+                          MatchDB.season == self.season,
                           MatchDB.match_in_season == self.match,
                           RoundDB.round_in_match == self.round))
 
@@ -140,16 +143,36 @@ class Round(Entity):
 
 
 class Match(Entity):
-    def __init__(self, season_id, match_id, db):
+    def __init__(self, league, season_id, match_id, db):
         super().__init__(db=db)
 
+        self.league = league
         self.season = season_id
         self.match = match_id
 
+        self._filter_query = (MatchDB.league == self.league,
+                              MatchDB.season == self.season,
+                              MatchDB.match_in_season == self.match)
+
+        result = self._db.session.query(MatchDB).filter(
+            *self._filter_query).all()
+
+        # check if found exactly one player in DB
+        if len(result) < 1:
+            raise Exception(
+                'No entry found. Please update your search parameters!')
+        elif len(result) > 1:
+            msg = [(entry.id, entry.league, entry.season,
+                    entry.match_in_season) for entry in result]
+            raise Exception(
+                f'Multiple entries found. Parameters to ambigious. The results are {msg}'
+            )
+        result = result[0]
+
+        self.id = result.id
+
     def get_stats(self):
-        return super().get_stats(
-            filter_query=(MatchDB.season == self.season,
-                          MatchDB.match_in_season == self.match))
+        return super().get_stats(filter_query=self._filter_query)
 
     def get_scores(self):
         stats_df = self.get_stats()

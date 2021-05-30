@@ -30,6 +30,7 @@ class Match(Base):
     date = Column(Date)
 
     rounds = relationship("Round", back_populates="match")
+    scores = relationship("PlayerScores", back_populates="match")
 
 
 class Round(Base):
@@ -69,8 +70,7 @@ class PlayerScores(Base):
 
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, ForeignKey('Player.id'))
-    season = Column(Integer)
-    week = Column(Integer)
+    match_id = Column(Integer, ForeignKey('Match.id'))
     kills = Column(Float)
     deaths = Column(Float)
     assists = Column(Float)
@@ -83,6 +83,7 @@ class PlayerScores(Base):
     total = Column(Float)
 
     player = relationship("Player", back_populates="scores")
+    match = relationship("Match", back_populates="scores")
 
 
 class DataBaseException(Exception):
@@ -149,6 +150,11 @@ class DB(object):
 
         return match
 
+    def __get_match_by_id__(self, id):
+        query_result = self.session.query(Match).filter(Match.id == id).all()
+
+        return query_result[0]
+
     def __get_round__(self, match, round_in_match, map_name, duration, time):
         query = (Round.match_id == match.id,
                  Round.round_in_match == round_in_match,
@@ -204,16 +210,14 @@ class DB(object):
 
         return player_stats
 
-    def __get_player_scores__(self, player, season, week, kills, deaths,
-                              assists, exp_per_min, healing, damage_soaked,
-                              winner, under_10_mins, under_15_mins, total):
+    def __get_player_scores__(self, player, match, kills, deaths, assists,
+                              exp_per_min, healing, damage_soaked, winner,
+                              under_10_mins, under_15_mins, total):
 
         query = (PlayerScores.player_id == player.id,
-                 PlayerScores.season == season, PlayerScores.week == week)
+                 PlayerScores.match_id == match.id)
 
-        player_scores = PlayerScores(season=season,
-                                     week=week,
-                                     kills=kills,
+        player_scores = PlayerScores(kills=kills,
                                      deaths=deaths,
                                      assists=assists,
                                      exp_per_min=exp_per_min,
@@ -230,6 +234,7 @@ class DB(object):
 
         if not exists:
             player.scores.append(player_scores)
+            match.scores.append(player_scores)
 
             self.session.add(player_scores)
             self.session.commit()
@@ -279,14 +284,15 @@ class DB(object):
         df = match.get_scores()
         df.reset_index(inplace=True)
 
+        db_match_entry = self.__get_match_by_id__(id=match.id)
+
         for i in range(len(df)):
             data_series = df.iloc[i]
             player = self.__get_player_by_id__(id=data_series['player_id'])
 
             self.__get_player_scores__(
                 player=player,
-                season=match.season,
-                week=data_series['week'],
+                match=db_match_entry,
                 kills=data_series['kills'],
                 deaths=data_series['deaths'],
                 assists=data_series['assists'],
