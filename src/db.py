@@ -126,6 +126,11 @@ class DB(object):
 
         return player
 
+    def __get_player_by_id__(self, id):
+        query_result = self.session.query(Player).filter(Player.id == id).all()
+
+        return query_result[0]
+
     def __get_match__(self, league, season, match_in_season, date):
         query = (Match.league == league, Match.season == season,
                  Match.match_in_season == match_in_season)
@@ -270,24 +275,25 @@ class DB(object):
                                      healing=series['healing'],
                                      damage_soaked=series['damage_soaked'])
 
-    def add_scores(self, score_evaluation):
-        scores = score_evaluation.get_scores()
+    def add_match_scores(self, match):
+        df = match.get_scores()
+        df.reset_index(inplace=True)
 
-        for score_dict in scores:
-            player = self.__get_player__(name=score_dict['player_name'],
-                                         blizzard_id=score_dict['blizzard_id'])
+        for i in range(len(df)):
+            data_series = df.iloc[i]
+            player = self.__get_player_by_id__(id=data_series['player_id'])
 
             self.__get_player_scores__(
                 player=player,
-                season=score_evaluation.season_id,
-                week=score_dict['week'],
-                kills=score_dict['kills'],
-                deaths=score_dict['deaths'],
-                assists=score_dict['assists'],
-                exp_per_min=score_dict['exp_per_min'],
-                healing=score_dict['healing'],
-                damage_soaked=score_dict['damage_soaked'],
-                winner=score_dict['winner'],
-                under_10_mins=score_dict['under_10_mins'],
-                under_15_mins=score_dict['under_15_mins'],
-                total=score_dict['total'])
+                season=match.season,
+                week=data_series['week'],
+                kills=data_series['kills'],
+                deaths=data_series['deaths'],
+                assists=data_series['assists'],
+                exp_per_min=data_series['exp_per_min'],
+                healing=data_series['healing'],
+                damage_soaked=data_series['damage_soaked'],
+                winner=data_series['winner'],
+                under_10_mins=data_series['under_10_mins'],
+                under_15_mins=data_series['under_15_mins'],
+                total=data_series['total'])

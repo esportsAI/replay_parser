@@ -1,29 +1,28 @@
 import numpy as np
 import pandas as pd
 from src.db import Player as PlayerDB
-from src.db import Player as PlayerDB
 from src.db import Match as MatchDB
 from src.db import Round as RoundDB
 from src.db import PlayerStats as PlayerStatsDB
 
 
-class Player(object):
-    def __init__(self, name, db):
-        self.name = name
+class Entity(object):
+    def __init__(self, db):
+        self._db = db
 
-        # create queries
-        query = db.session.query(PlayerStatsDB).join(
-            PlayerStatsDB.player).join(PlayerStatsDB.round).join(RoundDB.match)
-        query = query.filter(PlayerDB.name == self.name)
-        query = query.add_columns(MatchDB.season, MatchDB.match_in_season,
-                                  RoundDB.round_in_match, RoundDB.duration,
-                                  MatchDB.date)
+        # set query
+        self.query = self._db.session.query(PlayerStatsDB).join(
+            PlayerStatsDB.round).join(RoundDB.match)
+        self.query = self.query.add_columns(MatchDB.season,
+                                            MatchDB.match_in_season,
+                                            RoundDB.round_in_match,
+                                            RoundDB.duration, MatchDB.date)
 
-        # create df
-        self.df = pd.read_sql(query.statement, query.session.bind)
-        self.df = self.df[[
-            'season', 'match_in_season', 'date', 'round_in_match', 'duration',
-            'kills', 'deaths', 'assists', 'exp_contrib', 'healing',
+    @staticmethod
+    def __prettify_stat_df__(df):
+        df = df[[
+            'player_id', 'date', 'season', 'match_in_season', 'round_in_match',
+            'duration', 'kills', 'deaths', 'assists', 'exp_contrib', 'healing',
             'damage_soaked', 'winner_team'
         ]]
 
@@ -33,11 +32,7 @@ class Player(object):
             'round_in_match': 'round'
         }
 
-        self.df.rename(columns=new_column_names, inplace=True)
-
-        # get Blizzard ID
-        self.blizzard_id = db.session.query(PlayerDB).filter(
-            PlayerDB.name == self.name).all()[0].blizzard_id
+        return df.rename(columns=new_column_names)
 
     @staticmethod
     def __get_individual_scores__(data_series):
@@ -65,125 +60,110 @@ class Player(object):
 
         return scores_dict
 
-    @staticmethod
-    def __get_score__(scores_dict):
-        return np.sum(list(scores_dict.values()))
-
-    def get_round_scores(self, season_id, match_id, round_id):
-        data = self.df.query(
-            f'season == {season_id} & match == {match_id} & round == {round_id}'
-        )
-
-        if len(data) == 1:
-            data = data.iloc[0]
-        elif len(data) > 1:
-            raise Exception('Ambigious entries!')
-        else:
-            raise Exception('No matching data found!')
-
-        score_dict = self.__get_individual_scores__(data_series=data)
-        score_dict['total'] = self.__get_score__(scores_dict=score_dict)
+    def __get_score_dict__(self, data_series):
+        score_dict = self.__get_individual_scores__(data_series)
+        score_dict['total'] = np.sum(list(score_dict.values()))
+        score_dict['player_id'] = data_series['player_id']
 
         return score_dict
 
-    def get_match_scores(self, season_id, match_id):
-        data = self.df.query(f'season == {season_id} & match == {match_id}')
-
-        score_dicts = [
-            self.get_round_scores(season_id=season_id,
-                                  match_id=match_id,
-                                  round_id=round_id)
-            for round_id in data['round']
-        ]
-
-        df = pd.DataFrame(score_dicts).sort_values(['total'],
-                                                   ascending=False).iloc[:3]
-
-        return df.mean().to_dict()
-
-    def get_season_scores(self, season_id):
-        data = self.df.query(f'season == {season_id}')
-
-        scores = {}
-
-        for match_id in data['match'].unique():
-            match_date = data.query(f'match == {match_id}')['date'].iloc[0]
-            calendar_week = match_date.isocalendar().week
-
-            scores[calendar_week] = self.get_match_scores(season_id=season_id,
-                                                          match_id=match_id)
-
-        return scores
-
-
-class ScoreEvaluation(object):
-    def __init__(self, season_id, db):
-        self.season_id = season_id
-
-        # create queries
-        query = db.session.query(PlayerStatsDB).join(
-            PlayerStatsDB.player).join(PlayerStatsDB.round).join(RoundDB.match)
-        query = query.filter(MatchDB.season == self.season_id)
-        query = query.add_columns(PlayerDB.name, MatchDB.date)
-
+    def get_stats(self, filter_query):
+        query = self.query.filter(*filter_query)
         df = pd.read_sql(query.statement, query.session.bind)
 
-        self.players = [
-            Player(name=name, db=db) for name in df['name'].unique()
-        ]
+        return self.__prettify_stat_df__(df)
 
-        self.weeks = df['date']
-
-    def get_scores(self):
+    def get_scores(self, df):
         scores = []
 
-        for player in self.players:
-            season_scores = player.get_season_scores(season_id=self.season_id)
+        for i in range(len(df)):
+            score_dict = self.__get_score_dict__(df.iloc[i])
+            scores.append(score_dict)
 
-            for key, value in season_scores.items():
-                entry = {
-                    'player_name': player.name,
-                    'blizzard_id': player.blizzard_id
-                }
-                entry['week'] = key
-                entry.update(value)
+        return pd.DataFrame(scores)
 
-                scores.append(entry)
 
-        return scores
+class Player(Entity):
+    def __init__(self, db, db_id=None, name=None, blizzard_id=None):
+        super().__init__(db=db)
 
-    def get_summary(self):
-        score_board = []
-        scores_df = pd.DataFrame(self.get_scores())
+        # get player information
+        if db_id is not None:
+            query = (PlayerDB.id == db_id, )
+        elif blizzard_id is not None:
+            query = (PlayerDB.blizzard_id == blizzard_id, )
+        elif name is not None:
+            query = (PlayerDB.name == name, )
+        else:
+            raise Exception(
+                'Need at least one information to identify player.')
 
-        players = scores_df['player_name'].unique()
-        weeks = scores_df['week'].unique()
+        result = self._db.session.query(PlayerDB).filter(*query).all()
 
-        for player_name in players:
-            player_dict = {'Player Name': player_name}
-            for week in weeks:
-                entry = scores_df.query(
-                    f'player_name == "{player_name}" & week == {week}')
+        # check if found exactly one player in DB
+        if len(result) < 1:
+            raise Exception(
+                'No entry found. Please update your search parameters!')
+        elif len(result) > 1:
+            msg = [(entry.id, entry.blizzard_id, entry.name)
+                   for entry in result]
+            raise Exception(
+                f'Multiple entries found. Parameters to ambigious. The results are {msg}'
+            )
+        result = result[0]
 
-                if len(entry) == 0:
-                    continue
-                elif len(entry) == 1:
-                    player_dict[week] = entry.iloc[0]['total']
-                else:
-                    raise Exception('Ambigious entry found!')
+        # set player information
+        self.db_id = result.id
+        self.blizzard_id = result.blizzard_id
+        self.name = result.name
 
-            score_board.append(player_dict)
 
-        score_board = pd.DataFrame(score_board)
-        score_board['Avg. Score'] = score_board.mean(axis=1)
+class Round(Entity):
+    def __init__(self, season_id, match_id, round_id, db):
+        super().__init__(db=db)
 
-        # rename columns
-        week_offset = score_board.columns[1] - 1
-        cols = {}
+        self.season = season_id
+        self.match = match_id
+        self.round = round_id
 
-        for week in score_board.columns[1:-1]:
-            cols[week] = f'Week {week - week_offset}'
+    def get_stats(self):
+        return super().get_stats(
+            filter_query=(MatchDB.season == self.season,
+                          MatchDB.match_in_season == self.match,
+                          RoundDB.round_in_match == self.round))
 
-        score_board.rename(columns=cols, inplace=True)
+    def get_scores(self):
+        stats_df = self.get_stats()
+        df = super().get_scores(df=stats_df)
 
-        return score_board.round(2)
+        return df.set_index('player_id')
+
+
+class Match(Entity):
+    def __init__(self, season_id, match_id, db):
+        super().__init__(db=db)
+
+        self.season = season_id
+        self.match = match_id
+
+    def get_stats(self):
+        return super().get_stats(
+            filter_query=(MatchDB.season == self.season,
+                          MatchDB.match_in_season == self.match))
+
+    def get_scores(self):
+        stats_df = self.get_stats()
+        df = super().get_scores(df=stats_df)
+
+        week = stats_df['date'][0].isocalendar().week
+
+        df = df.groupby(
+            "player_id",
+            group_keys=False).apply(lambda g: g.nlargest(3, "total"))
+        df = df.groupby("player_id",
+                        group_keys=False).apply(lambda g: g.mean())
+        df['player_id'] = df['player_id'].astype(int)
+        df.set_index('player_id', inplace=True)
+        df['week'] = week
+
+        return df
